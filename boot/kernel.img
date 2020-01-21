@@ -1,0 +1,283 @@
+-- Kernel --
+
+local flags = ...
+
+local KERNEL_VERSION = "0.0.1"
+
+CC_VERSION = 1.8 -- Assume we're on CC1.8
+
+local STATUS = "boot"
+
+ccefi.write("CC-UNIX Boot: Stage 2", true)
+
+ccefi.write("Lua version: " .. _VERSION, true)
+
+function write(str)
+  local w,h = term.getSize()
+  local x,y = term.getCursorPos()
+  for i=1, #str, 1 do
+    local c = str:sub(i,i)
+    if c == "\n" then
+      if y+1 <= h then
+        term.setCursorPos(1,y+1)
+      else
+        term.setCursorPos(1,y)
+        term.scroll(1)
+      end
+    else
+      if x+1 <= w then
+        term.write(c)
+      else
+        if y+1 <= h then
+          term.setCursorPos(1,y+1)
+        else
+          term.setCursorPos(1,y)
+          term.scroll(1)
+        end
+        term.write(c)
+      end
+    end
+    x,y = term.getCursorPos()
+  end
+end
+
+function print(...)
+  local toPrint = {...}
+  for i=1, #toPrint, 1 do
+    write(toPrint[i])
+  end
+  write("\n")
+end
+
+function error(reason)
+  STATUS = "panic"
+  print("=====================")
+  print("Kernel panic: " .. (reason or "No reason given"))
+  print("=====================")
+end
+
+function log(msg, type)
+  if type == ("ok" or "log") or type == nil then
+    term.setTextColor(32)
+  elseif type == "err" then
+    term.setTextColor(16384)
+  end
+  write("* ")
+  term.setTextColor(1)
+  write(msg)
+end
+
+function loadfile(filepath, env)
+  if not env then env = _G end
+
+  local func, err
+  local h = fs.open(filepath, "r")
+  if h then
+    local data = h.readAll()
+    h.close()
+    func, err = loadstring(data, filepath, "bt", env)
+  else
+    func, err = function()return false end, "File inaccessible"
+  end
+
+  return func, err
+end
+
+print("Kernel version: " .. KERNEL_VERSION)
+
+log("Detecting hardware type")
+
+local hwid
+
+write(".")
+
+if ccemux then
+  hwid = "CCEmuX"
+elseif config and periphemu then
+  hwid = "CraftOS-PC 2"
+else
+  hwid = "ComputerCraft"
+end
+
+write(".")
+
+hwid = hwid .. "/ComputerCraft"
+
+if term.isColor() then
+  if commands then
+    hwid = hwid .. " Command Computer"
+  else
+    hwid = hwid .. " Advanced Computer"
+  end
+else
+  hwid = hwid .. " Standard Computer"
+end
+
+write(".")
+
+if unpack or table.unpack then
+  table.unpack = table.unpack or unpack
+else
+  CC_VERSION = 1.7
+end
+
+if not fs.complete then
+  CC_VERSION = 1.6
+end
+
+if not fs.find then
+  CC_VERSION = 1.5
+end
+
+print(hwid)
+
+log("Disabling CCEFI interface as it is not needed\n")
+
+ccefi = nil
+
+log("Figuring out drivers to load\n")
+
+local drivers = {}
+
+if ccemux then
+  table.insert(drivers, "/lib/modules/ccemux.mod")
+end
+
+if periphemu and config then
+  table.insert(drivers, "/lib/modules/craftos-pc2.mod")
+end
+
+if commands then
+  table.insert(drivers, "/lib/modules/commands.mod")
+end
+
+if term.isColor() then
+  table.insert(drivers, "/lib/modules/computer/advanced.mod")
+else
+  table.insert(drivers, "/lib/modules/computer/standard.mod")
+end
+
+table.insert(drivers, "/lib/modules/peripheral.mod")
+
+if CC_VERSION < 1.8 then
+  log("Compensating for old CC version\n")
+  table.insert(drivers, "/lib/modules/versions/" .. tostring(CC_VERSION) .. ".mod")
+end
+
+if http then
+  log("Enabling networking driver\n")
+  table.insert(drivers, "/lib/modules/network/net.mod")
+end
+
+log("Loading drivers...\n")
+
+for i=1, #drivers, 1 do
+  local ok, err = loadfile(drivers[i])
+  if not ok then
+    log("Error '" .. err:lower() .. "' encountered while loading driver " .. drivers[i] .. "\n", "err")
+  else
+    ok()
+  end
+end
+
+print("done")
+
+log("Setting up require()\n")
+
+local rqPath = "/usr/include"
+
+local function dofile(file)
+  local ok, err = loadfile(file)
+  if not ok then
+    log(file .. ": " .. err .. "\n", "err")
+    return false
+  end
+  return ok()
+end
+
+function require(api)
+  local head = api:sub(1,1)
+  if head == "/" then
+    return dofile(api)
+  else
+    if fs.exists(rqPath .. api) then
+      return dofile(rqPath .. api)
+    end
+  end
+end
+
+log("Setting up kernel callbacks\n")
+
+local shutdown = os.shutdown
+local reboot = os.reboot
+
+os.shutdown, os.reboot = nil, nil
+
+kernel = {
+  shutdown = function(r)
+    STATUS = "shutdown"
+    if sched then
+      log("Disabling multithreading\n")
+      sched.stop()
+    end
+    if fs.savePermissions then
+      log("Saving filesystem permissions\n")
+      fs.savePermissions()
+    end
+    if users then
+      log("Logging out " .. users.user() .. "\n")
+      users.logout()
+    end
+    if r then
+      log("Restarting\n")
+      reboot()
+    else
+      log("Shutting down\n")
+      shutdown()
+      while true do
+        coroutine.yield()
+      end
+    end
+  end,
+  status = function()
+    return STATUS
+  end,
+  version = function()
+    return "CC-UNIX " .. KERNEL_VERSION
+  end,
+  hwinfo = function()
+    return {
+      ["hwid"] = hwid,
+      ["color"] = loadstring("if term.isColor() then return 'true' else return 'false' end")()
+    }
+  end,
+  uname = function(mode)
+    if type(mode) == "string" then
+      if mode == "all" then
+        return ("CC-UNIX " .. KERNEL_VERSION .. " " .. _VERSION)
+      end
+      if mode == "arch" then
+        return _VERSION
+      end
+    end
+  end,
+  syscall = function(call, param1, param2)
+    kernel[call](param1, param2)
+  end
+}
+
+print("CC-UNIX Boot: Stage 3")
+
+log("Loading ccinit\n")
+
+if not flags.init then
+  flags.init = "/sbin/init"
+end
+
+local ok, err = loadfile(flags.init)
+if not ok then
+  error(err .. " while loading " .. flags.init)
+  return false
+end
+
+ok()

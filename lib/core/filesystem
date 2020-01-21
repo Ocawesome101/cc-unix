@@ -1,0 +1,218 @@
+-- Filesystem sandboxing --
+
+-- Default file permissions are:
+--  owner: root
+--  perms: 755
+-- File permissions are currently only saved ON SHUTDOWN, meaning that the system
+-- should only be shut down with the 'shutdown' shell command.
+
+local permissions = loadfile("/etc/fs/permissions")()
+
+local serialize = require("lua/serialize")
+
+local homeDirs = fs.list("/home")
+
+for i=1, #homeDirs, 1 do
+  table.insert(permissions, {dir="/home/"..homeDir,owner=homeDir,perms="700"})
+end
+
+local octalCodes = {
+  ["0"] = "---",
+  ["1"] = "--x",
+  ["2"] = "-w-",
+  ["3"] = "-wx",
+  ["4"] = "r--",
+  ["5"] = "r-x",
+  ["6"] = "rw-",
+  ["7"] = "rwx"
+}
+
+local permCodes = {
+  ["-"] = false,
+  ["r"] = true,
+  ["w"] = true,
+  ["x"] = true
+}
+
+local _fs = {}
+
+for k,v in pairs(fs) do
+  _fs[k] = v
+end
+
+local function parseOctal(octal)
+  local own, othr = octal:sub(1,1), octal:sub(2,2) -- The 3rd digit is ignored currently as usergroups aren't a thing
+  own, othr = octalCodes[own], octalCodes[othr]
+  local owner, other = {}, {}
+
+  owner.read = permCodes[own:sub(1,1)]
+  owner.write = permCodes[own:sub(2,2)]
+  owner.exec = permCodes[own:sub(3,3)]
+  
+  other.read = permCodes[othr:sub(1,1)]
+  other.write = permCodes[othr:sub(1,1)]
+  other.exec = permCodes[othr:sub(3,3)]
+  
+  return owner,other
+end
+
+function fs.permissions(file)
+  local rtn = {}
+  rtn.octal = "755"
+  rtn.owner = "root"
+  for i=1, #permissions, 1 do
+    if permissions[i].dir == file:sub(1,math.max(#permissions[i].dir, #file)) then
+      rtn.octal = permissions[i].perms
+      rtn.owner = permissions[i].owner
+    end
+  end
+
+  rtn.ownerPerms, rtn.otherPerms = parseOctal(rtn.octal)
+
+  return rtn
+end
+
+function fs.canAccess(file, mode)
+  local perms = fs.permissions(file)
+  if mode == "r" then
+    if perms.read == true then
+      return true
+    end
+  elseif mode == "w" then
+    if perms.write == true then
+      return true
+    end
+  end
+  return false
+end
+
+function fs.open(file, mode)
+  local canAccess = fs.canAccess(file, mode)
+  if canAccess then
+    return _fs.open(file, mode)
+  else
+    print(file .. ": Access denied")
+    return false
+  end
+end
+
+function fs.list(dir)
+  return _fs.list(dir)
+end
+
+function fs.exists(path)
+  return _fs.exists(path)
+end
+
+function fs.isDir(path)
+  return _fs.isDir(path)
+end
+
+-- Return read-only on a per-user basis
+function fs.isReadOnly(path)
+  local canAccess = fs.canAccess(path, "w")
+  if not canAccess then
+    return true
+  else
+    return _fs.isReadOnly(path)
+  end
+end
+
+function fs.getName(path)
+  return _fs.getName(path)
+end
+
+function fs.getDrive(path)
+  return _fs.getDrive(path)
+end
+
+function fs.getSize(path)
+  return _fs.getSize(path)
+end
+
+function fs.getFreeSpace(path)
+  return _fs.getFreeSpace(path)
+end
+
+function fs.makeDir(path)
+  local canAccess = fs.canAccess(path, "w")
+  if canAccess then
+    return _fs.makeDir(path)
+  else
+    return
+  end
+end
+
+function fs.copy(source, dest)
+  local srcAccess = fs.canAccess(source, "r")
+  local destAccess = fs.canAccess(dest, "w")
+  if srcAccess and destAccess then
+    return _fs.copy(source, dest)
+  else
+    return
+  end
+end
+
+function fs.delete(path)
+  local canAccess = fs.canAccess(path, "w")
+  if canAccess then
+    return _fs.delete(path)
+  else
+    return
+  end
+end
+
+if _fs.find then
+  function fs.find(wildcard)
+    return _fs.find(wildcard)
+  end
+end
+
+if _fs.getDir then
+  function fs.getDir(path)
+    return _fs.getDir(path)
+  end
+end
+
+function fs.chmod(file, newPermissions) -- For simplicity's sake, only root can do this
+  if not fs.isDir(file) then
+    return false, "Can only change permissions on a per-directory basis"
+  end
+  if users.user() == "root" then
+    for i=1, #permissions, 1 do
+      if permissions[i].dir == file then
+        permissions[i] = {dir=file,owner=permissions[i].owner,perms=newPermissions}
+        return true
+      end
+    end
+    table.insert(permissions, {dir=file,owner="root",perms=newPermissions})
+  else
+    return false, "Access denied-- only root can do that"
+  end
+end
+
+function fs.chown(file, newOwner)
+  if not fs.isDir(file) then
+    return false, "Can only change ownership on a per-directory basis"
+  end
+  if users.user() == "root" then
+    for i=1, #permissions, 1 do
+      if permissions[i].dir == file then
+        permissions[i] = {dir=file,owner=newOwner,perms=permissions[i].perms}
+        return true
+      end
+    end
+
+    table.insert(permissions, {dir=file, owner=newOwner, perms="755"})
+  else
+    return false, "Access denied-- only root can do that"
+  end
+end
+
+function fs.savePermissions()
+  if kernel.status() == "shutdown" then
+    local h = _fs.open("/etc/fs/permissions", "w")
+    h.write("return " .. serialize(permissions))
+    h.close()
+  end
+end

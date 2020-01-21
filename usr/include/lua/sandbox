@@ -1,0 +1,56 @@
+-- Sandboxing API --
+
+local sb = {}
+--[[
+local function tcopy(tbl)
+  local rtn = {}
+  for k,v in pairs(tbl) do
+    rtn[k] = v
+  end
+  return rtn
+end
+]]
+function tcopy(tbl)
+  return tbl
+end
+
+function sb.sandboxedRun(program, globalTable)
+  local ok, err = loadfile(program)
+  if ok then
+    setfenv(ok, globalTable)
+    ok()
+  end
+end
+
+function sb.basicGlobalTable()
+  print("init")
+  local env = {}
+  print("os")
+  env.os = tcopy(os)
+  print("fs")
+  env.fs = tcopy(fs)
+  print("table")
+  env.table = tcopy(table)
+  print("string")
+  env.string = tcopy(string)
+  print("require")
+  env.require = require
+  print("term")
+  env.term = tcopy(term)
+  print("write")
+  env.write = write
+  print("print")
+  env.print = print
+  print("read")
+  env.read = (require("lua/read") or nil)
+  if users then
+    print("users")
+    env.users = tcopy(users)
+  end
+  print("loadstring")
+  env.loadstring = loadstring
+
+  return env
+end
+
+return sb

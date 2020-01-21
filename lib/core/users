@@ -1,0 +1,61 @@
+-- User system --
+
+local username = ""
+local userid = ""
+
+local read = require("lua/read")
+
+local _fs = {}
+
+for k,v in pairs(fs) do
+  _fs[k] = v
+end
+
+_G.users = {}
+
+local function authenticate(uname, pwd)
+  local creds = getCreds()
+  for k,v in pairs(creds) do
+    if k == uname and v.password == pwd then
+      return true, v.uid
+    else
+      return false
+    end
+  end
+end
+
+function users.login()
+  write((net.hostname() or "localhost") .. " login: ")
+  local uname = read()
+  write("password: ")
+  local pwd = read("*")
+  local ok, uid = authenticate(uname, pwd)
+  if ok then
+    username = uname
+    userid = uid
+    return true
+  end
+  return false
+end
+
+function users.logout()
+  username = ""
+  userid = ""
+end
+
+function users.su()
+  local olduser = username
+  local olduid = userid
+  local succ = users.login()
+  if succ then
+    local oldlogout = users.logout
+    function users.logout()
+      username = olduser
+      userid = olduid
+      users.logout = oldlogout
+    end
+    return true
+  else
+    return false
+  end
+end
