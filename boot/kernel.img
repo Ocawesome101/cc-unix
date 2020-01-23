@@ -76,7 +76,7 @@ function log(msg, type)
   write("* ")
   term.setTextColor(1)
   write(msg)
-  sleep(1)
+  sleep(0.05)
 end
 
 function loadfile(filepath, env)
