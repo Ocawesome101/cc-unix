@@ -32,7 +32,7 @@ _G.sched = require("/sbin/sched")
 log("Setting up userspace: stage 1\n")
 log("Initialize user subsystem\n")
 
-require("/lib/core/users")
+_G.users = require("/lib/core/users")
 
 log("Loading sandboxing API\n")
 local sandbox = require("lua/sandbox")

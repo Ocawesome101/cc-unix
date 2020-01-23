@@ -1,6 +1,5 @@
 -- Task scheduler --
 
-
 local sched = {}
 
 sched.tasks = {}
@@ -29,5 +28,8 @@ function sched.addTask(name, exec, initialArgs)
 end
 
 function sched.init()
-  debug.setHook(sched.callback, "f")
+  debug.sethook(sched.callback, "f")
+--  while true do sched.callback()end
 end
+
+return sched

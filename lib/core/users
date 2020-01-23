@@ -3,15 +3,26 @@
 local username = ""
 local userid = ""
 
-local read = require("lua/read")
-
 local _fs = {}
 
 for k,v in pairs(fs) do
   _fs[k] = v
 end
 
-_G.users = {}
+local read = require("lua/read")
+
+local users = {}
+
+local function getCreds()
+  local h = _fs.open("/etc/passwd", "r")
+  if h then
+    local creds = h.readAll()
+  else
+    return {["user"] = "password"}
+  end
+  h.close()
+  return loadstring("return " .. creds, "@users.getCreds", "bt", _G)
+end
 
 local function authenticate(uname, pwd)
   local creds = getCreds()
@@ -22,6 +33,14 @@ local function authenticate(uname, pwd)
       return false
     end
   end
+end
+
+function users.user()
+  return username
+end
+
+function users.uid()
+  return userid
 end
 
 function users.login()
@@ -59,3 +78,5 @@ function users.su()
     return false
   end
 end
+
+return users

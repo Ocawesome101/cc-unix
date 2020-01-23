@@ -56,6 +56,17 @@ function error(reason)
   print("=====================")
 end
 
+function sleep(time)
+  local timerId = os.startTimer(time)
+  local done = false
+  repeat
+    local e, id = os.pullEvent("timer")
+    if e == "timer" and id == timerId then
+      done = true
+    end
+  until done
+end 
+
 function log(msg, type)
   if type == ("ok" or "log") or type == nil then
     term.setTextColor(32)
@@ -65,6 +76,7 @@ function log(msg, type)
   write("* ")
   term.setTextColor(1)
   write(msg)
+  sleep(1)
 end
 
 function loadfile(filepath, env)
@@ -131,6 +143,10 @@ end
 
 print(hwid)
 
+log("Setting up initial kernel hooks\n")
+_G.kernel = {}
+kernel.pullEvent = ccefi.pullEvent
+
 log("Disabling CCEFI interface as it is not needed\n")
 
 ccefi = nil
@@ -184,7 +200,7 @@ print("done")
 
 log("Setting up require()\n")
 
-local rqPath = "/usr/include"
+local rqPath = "/usr/include/"
 
 local function dofile(file)
   local ok, err = loadfile(file)
@@ -213,58 +229,62 @@ local reboot = os.reboot
 
 os.shutdown, os.reboot = nil, nil
 
-kernel = {
-  shutdown = function(r)
-    STATUS = "shutdown"
-    if sched then
-      log("Disabling multithreading\n")
-      sched.stop()
-    end
-    if fs.savePermissions then
-      log("Saving filesystem permissions\n")
-      fs.savePermissions()
-    end
-    if users then
-      log("Logging out " .. users.user() .. "\n")
-      users.logout()
-    end
-    if r then
-      log("Restarting\n")
-      reboot()
-    else
-      log("Shutting down\n")
-      shutdown()
-      while true do
-        coroutine.yield()
-      end
-    end
-  end,
-  status = function()
-    return STATUS
-  end,
-  version = function()
-    return "CC-UNIX " .. KERNEL_VERSION
-  end,
-  hwinfo = function()
-    return {
-      ["hwid"] = hwid,
-      ["color"] = loadstring("if term.isColor() then return 'true' else return 'false' end")()
-    }
-  end,
-  uname = function(mode)
-    if type(mode) == "string" then
-      if mode == "all" then
-        return ("CC-UNIX " .. KERNEL_VERSION .. " " .. _VERSION)
-      end
-      if mode == "arch" then
-        return _VERSION
-      end
-    end
-  end,
-  syscall = function(call, param1, param2)
-    kernel[call](param1, param2)
+kernel.shutdown = function(r)
+  STATUS = "shutdown"
+  if sched then
+    log("Disabling multithreading\n")
+    sched.stop()
   end
-}
+  if fs.savePermissions then
+    log("Saving filesystem permissions\n")
+    fs.savePermissions()
+  end
+  if users then
+    log("Logging out " .. users.user() .. "\n")
+    users.logout()
+  end
+  if r then
+    log("Restarting\n")
+    reboot()
+  else
+    log("Shutting down\n")
+    shutdown()
+    while true do
+      coroutine.yield()
+    end
+  end
+end
+
+kernel.status = function()
+  return STATUS
+end
+
+kernel.version = function()
+  return "CC-UNIX " .. KERNEL_VERSION
+end
+
+kernel.hwinfo = function()
+  return {
+    ["hwid"] = hwid,
+    ["color"] = loadstring("if term.isColor() then return 'true' else return 'false' end")()
+  }
+end
+
+kernel.uname = function(mode)
+  if type(mode) == "string" then
+    if mode == "all" then
+      return ("CC-UNIX " .. KERNEL_VERSION .. " " .. _VERSION)
+    end
+    if mode == "arch" then
+      return _VERSION
+    end
+  end
+end
+
+kernel.syscall = function(call, param1, param2)
+  kernel[call](param1, param2)
+end
+
 
 print("CC-UNIX Boot: Stage 3")
 

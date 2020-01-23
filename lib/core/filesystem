@@ -3,10 +3,14 @@
 -- Default file permissions are:
 --  owner: root
 --  perms: 755
--- File permissions are currently only saved ON SHUTDOWN, meaning that the system
+-- File permissions are currently only autosaved ON SHUTDOWN, meaning that the system
 -- should only be shut down with the 'shutdown' shell command.
 
 local permissions = loadfile("/etc/fs/permissions")()
+
+if not permissions then
+  permissions = {}
+end
 
 local serialize = require("lua/serialize")
 
@@ -74,13 +78,25 @@ end
 
 function fs.canAccess(file, mode)
   local perms = fs.permissions(file)
-  if mode == "r" then
-    if perms.read == true then
-      return true
+  if perms.owner == users.user() then
+    if mode == "r" then
+      if perms.ownerPerms.read == true then
+        return true
+      end
+    elseif mode == "w" then
+      if perms.ownerPerms.write == true then
+        return true
+      end
     end
-  elseif mode == "w" then
-    if perms.write == true then
-      return true
+  else
+    if mode == "r" then
+      if perms.otherPerms.read == true then
+        return true
+      end
+    elseif mode == "w" then
+      if perms.otherPerms.write == true then
+        return true
+      end
     end
   end
   return false

@@ -1,0 +1,38 @@
+-- Requireable read() function for your Lua scripts. For convenience. --
+
+local keys = require("/rom/modules/ccefi/keys.lua") -- Why? Because I'm not going to duplicate a file yet.
+
+local function read(replaceChar)
+  local str = ""
+  local x,y = term.getCursorPos()
+  local w,h = term.getSize()
+  
+  local function redraw()
+    term.setCursorPos(x,y)
+    term.write(string.rep(" ", w-x))
+    term.setCursorPos(x,y)
+    term.write(str)
+  end
+
+  while true do
+    local event, param = os.pullEvent()
+
+    if event == "key" then
+      log("key")
+      if param == keys.backspace then
+        str = str:sub(-1)
+      elseif param == keys.enter then
+        break
+      end
+    elseif event == "char" then
+      str = str .. param
+    elseif event == "paste" then
+      str = str .. param
+    end
+    redraw()
+  end
+  print()
+  return str
+end
+
+return read
