@@ -2,50 +2,31 @@
 
 local INIT_VERSION = "0.0.1"
 
+-- Messy
 print()
-
 term.setTextColor(8)
 write("  CCInit ")
-
 term.setTextColor(32)
 write(INIT_VERSION)
-
 term.setTextColor(1)
 write(" starting up ")
-
 term.setTextColor(16)
 write(kernel.version().."\n\n")
-
 term.setTextColor(1)
+-- /Messy
 
-log("Initializing scheduler\n")
-
-print("Checking for required APIs")
-
-if not debug then
-  error("Debug API not present-- cannot continue")
-  return
+log("Starting init services\n")
+local initd = fs.list("/etc/init.d")
+for i=1, #initd, 1 do
+  local ok, err = loadfile("/etc/init.d/" .. initd[i])
+  if not ok then
+    error("Error " .. err .. " in " .. initd[i])
+  end
+  ok()
 end
 
-_G.sched = require("/sbin/sched")
-
-log("Setting up userspace: stage 1\n")
-log("Initialize user subsystem\n")
-
-_G.users = require("/lib/core/users")
-
-log("Loading sandboxing API\n")
-local sandbox = require("lua/sandbox")
-
-log("Sandboxing filesystem\n")
-local ok, err = loadfile("/lib/core/filesystem")
-if (not ok) or err then
+local ok, err = loadfile("/bin/login")
+if not ok then
   error(err)
 end
-
 ok()
-
-log("Launching sandboxed login screen in multitasking environment\n")
-
-sched.init()
-sched.addTask("login", loadfile("/bin/login"))

@@ -1,0 +1,28 @@
+-- Better tables. The goal of this API is to provide convenience functions similar to
+-- that of strings-- for example, on strings you can run:
+-- string.gsub(str, "match") OR str:gsub("match")
+-- string.sub(str, 1, 5) OR str:sub(1, 5)
+-- if str is a string. The examples given are a small subset of the available methods.
+--
+-- On tables you cannot, by default, do this. (Why? I don't know!) My solution is
+-- setting the metatable of a table object to { __index = table }, the equivalent of
+-- which I believe is done with strings. You should, after requiring this API and
+-- creating a table with table.new(),  be able to run:
+-- table.concat(tbl, " ") OR tbl:concat(tbl, " ")
+-- table.insert(tbl, "item") OR tbl:insert(tbl, "item")
+-- it tbl is a table. The examples should, as with strings, be a small subset of the
+-- available methods.
+
+local t = {}
+
+for k,v in pairs(table) do -- Copy the original table API so we don't lose it; this will likely be required as 'local table = require("table")' or similar.
+  t[k] = v
+end
+
+function t.new(items) -- Create a new table with (hopefully) the same benefits as strings. Why this isn't done by default I have no idea.
+  local rtn = items or {}
+  setmetatable(rtn, {__index=t}) -- Does it work? I hope so.
+  return rtn
+end
+
+return t -- Return the better table stuff. Bam, done.

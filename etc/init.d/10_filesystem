@@ -1,0 +1,7 @@
+log("Sandboxing filesystem\n")
+local ok, err = loadfile("/lib/core/filesystem")
+if not ok then
+  error(err)
+end
+
+ok()

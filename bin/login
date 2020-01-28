@@ -1,3 +1,22 @@
 -- Login --
 
-users.login()
+if sh then
+  error("Already logged in")
+  return false
+end
+
+local u, p
+
+while true do
+  write((net.hostname() or "localhost") .. " login: ")
+  u = read()
+  write("password: ")
+  p = read("")
+  if users.login(u, p) then
+    local ok, err = loadfile("/bin/sh")
+    if not ok then
+      error(err)
+    end
+    ok()
+  end
+end

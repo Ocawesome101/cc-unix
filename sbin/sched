@@ -1,35 +1,31 @@
--- Task scheduler --
+-- Cooperative task scheduler --
 
 local sched = {}
 
 sched.tasks = {}
 
-function sched.callback(event, num)
-  for i=1, #sched.tasks, 1 do
-    local status = coroutine.status(sched.tasks[i].exec)
-    if status == "dead" then
-      sched.tasks[i] = nil
-    else
-      coroutine.resume(sched.tasks[i].exec)
+function sched.init()
+  while true do
+    for i=1, #sched.tasks, 1 do
+      local status = coroutine.status(sched.tasks[i].exec)
+      if status == "dead" then
+        sched.tasks[i] = nil
+      else
+        coroutine.resume(sched.tasks[i].exec)
+      end
     end
   end
 end
 
-function sched.addTask(name, exec, initialArgs)
+function sched.addTask(name, exec)
   if type(name) ~= "string" or type(exec) ~= "function" then
     return
   end
   local coro = coroutine.create(exec)
-  coroutine.resume(coro, initialArgs) -- Kickstart the program
 
   if coroutine.status(coro) ~= "dead" then
-    table.insert(sched.tasks, {name = name, exec = coro, status=coroutine.status(coro)})
+    table.insert(sched.tasks, {name = name, exec = coro, status=coroutine.status(coro)}
   end
-end
-
-function sched.init()
-  debug.sethook(sched.callback, "f")
---  while true do sched.callback()end
 end
 
 return sched

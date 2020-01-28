@@ -1,0 +1,17 @@
+-- A simple table serializer --
+
+local function serialize(t)
+  local rtn = "{"
+  for i=1, #t, 1 do
+    if type(t[i]) == "table" then
+      rtn = rtn .. serialize(t[i]) -- Recursion FTW
+    elseif type(t[i]) == "function" then
+      error("Cannot serialize a function")
+    else
+      rtn = rtn .. tostring(t[i]) .. ","
+    end
+  end
+  return rtn .. "}"
+end
+
+return serialize

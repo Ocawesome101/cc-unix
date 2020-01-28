@@ -1,0 +1,22 @@
+-- Tokenize strings --
+
+local function tokenize(str, s)
+  local separator = s or " "
+  local line = str
+  local words = {}
+  local word = ""
+  for match in string.gmatch(line, ".") do
+    if match ~= separator then
+      word = word .. match
+    else
+      table.insert(words, word)
+      word = ""
+    end
+  end
+  if word ~= "" then
+    table.insert(words, word)
+  end
+  return words
+end
+
+return tokenize

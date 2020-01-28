@@ -17,7 +17,7 @@ local serialize = require("lua/serialize")
 local homeDirs = fs.list("/home")
 
 for i=1, #homeDirs, 1 do
-  table.insert(permissions, {dir="/home/"..homeDir,owner=homeDir,perms="700"})
+  table.insert(permissions, {dir="/home/"..homeDirs[i],owner=homeDir,perms="700"})
 end
 
 local octalCodes = {
@@ -44,6 +44,10 @@ for k,v in pairs(fs) do
   _fs[k] = v
 end
 
+local function rwx(octal) -- return a string such as "rwxr-xr-x" describing file permissions
+  return octalCodes[octal:sub(1,1)] .. octalCodes[octal:sub(2,2)] .. octalCodes[octal:sub(3,3)]
+end
+
 local function parseOctal(octal)
   local own, othr = octal:sub(1,1), octal:sub(2,2) -- The 3rd digit is ignored currently as usergroups aren't a thing
   own, othr = octalCodes[own], octalCodes[othr]
@@ -62,6 +66,7 @@ end
 
 function fs.permissions(file)
   local rtn = {}
+  rtn.rwx = rwx("755")
   rtn.octal = "755"
   rtn.owner = "root"
   for i=1, #permissions, 1 do
@@ -71,6 +76,7 @@ function fs.permissions(file)
     end
   end
 
+  rtn.rwx = rwx(rtn.octal)
   rtn.ownerPerms, rtn.otherPerms = parseOctal(rtn.octal)
 
   return rtn
@@ -226,9 +232,7 @@ function fs.chown(file, newOwner)
 end
 
 function fs.savePermissions()
-  if kernel.status() == "shutdown" then
-    local h = _fs.open("/etc/fs/permissions", "w")
-    h.write("return " .. serialize(permissions))
-    h.close()
-  end
+  local h = _fs.open("/etc/fs/permissions", "w")
+  h.write("return " .. serialize(permissions))
+  h.close()
 end

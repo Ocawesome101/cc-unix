@@ -12,6 +12,12 @@ ccefi.write("CC-UNIX Boot: Stage 2", true)
 
 ccefi.write("Lua version: " .. _VERSION, true)
 
+-- Disable the debug API --
+if debug then
+  debug = nil
+end
+
+-- Write, print, error. The holy trinity of I/O. --
 function write(str)
   local w,h = term.getSize()
   local x,y = term.getCursorPos()
@@ -44,16 +50,27 @@ end
 function print(...)
   local toPrint = {...}
   for i=1, #toPrint, 1 do
-    write(toPrint[i])
+    write(tostring(toPrint[i]))
+    if i < #toPrint and #tostring(toPrint[i]) >= 1 then
+      write(" ")
+    end
   end
   write("\n")
 end
 
-function error(reason)
+local function panic(reason)
   STATUS = "panic"
   print("=====================")
   print("Kernel panic: " .. (reason or "No reason given"))
   print("=====================")
+end
+
+function error(reason)
+  if STATUS == "booting" then
+    panic(reason)
+  else
+    print("ERR:" .. reason)
+  end
 end
 
 function sleep(time)
@@ -76,7 +93,6 @@ function log(msg, type)
   write("* ")
   term.setTextColor(1)
   write(msg)
-  sleep(0.05)
 end
 
 function loadfile(filepath, env)
@@ -127,10 +143,12 @@ end
 
 write(".")
 
-if unpack or table.unpack then
-  table.unpack = table.unpack or unpack
-else
-  CC_VERSION = 1.7
+if not table.unpack then
+  if not unpack then
+    CC_VERSION = 1.7
+  else
+    table.unpack = unpack
+  end
 end
 
 if not fs.complete then
@@ -142,14 +160,6 @@ if not fs.find then
 end
 
 print(hwid)
-
-log("Setting up initial kernel hooks\n")
-_G.kernel = {}
-kernel.pullEvent = ccefi.pullEvent
-
-log("Disabling CCEFI interface as it is not needed\n")
-
-ccefi = nil
 
 log("Figuring out drivers to load\n")
 
@@ -224,11 +234,7 @@ end
 
 log("Setting up kernel callbacks\n")
 
-local shutdown = os.shutdown
-local reboot = os.reboot
-
-os.shutdown, os.reboot = nil, nil
-
+_G.kernel = {}
 kernel.shutdown = function(r)
   STATUS = "shutdown"
   if sched then
@@ -245,13 +251,10 @@ kernel.shutdown = function(r)
   end
   if r then
     log("Restarting\n")
-    reboot()
+    os.reboot()
   else
     log("Shutting down\n")
-    shutdown()
-    while true do
-      coroutine.yield()
-    end
+    os.shutdown()
   end
 end
 
@@ -300,4 +303,5 @@ if not ok then
   return false
 end
 
+STATUS = "kernel done"
 ok()

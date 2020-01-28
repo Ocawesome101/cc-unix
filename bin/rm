@@ -1,0 +1,10 @@
+-- rm --
+
+local _, args = sh.parse(...)
+
+if #args < 1 then
+  error("rm: missing operand")
+  return false
+end
+
+fs.delete(args[1])

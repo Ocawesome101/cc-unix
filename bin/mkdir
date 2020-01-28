@@ -1,0 +1,10 @@
+-- mkdir --
+
+local _, args = sh.parse(...)
+
+if #args < 1 then
+  error("mkdir: missing operand")
+  return false
+end
+
+fs.makeDir(sh.resolvePath(args[1]))

@@ -1,0 +1,259 @@
+-- CC-UNIX shell. Might work on CraftOS, might not. --
+--
+-- The CC-UNIX shell implementation draws heavily from its Bourne inspiration. It
+-- features variables, aliases, and built-in commands, all of which are identical to
+-- the Bourne Again SHell (bash) at an API level. Internally, they are much different,
+-- primarily because the CC-UNIX shell is written in Lua, and the Bourne shell largely
+-- in C.
+--
+-- The CC-UNIX shell has the following features:
+--   Variables
+--   Command aliases
+--   Built-in commands
+--   A fairly customizable prompt
+--
+-- PS1 customization:
+--  The CC-UNIX shell's PS1 implementation currently supports the following escape
+-- sequences:
+--    \u	The username of the current user.
+--    \h	The system's hostname when the shell was started.
+--    \w	The current working directory.
+--    \W	The current working directory, truncated to only the last directory.
+--    \$	A # if you are root, and a $ otherwise.
+--
+-- Escape sequences can be combined; the default PS1, for example, is set to:
+--   "[\u@\h \W]\$ "
+--
+-- Shell API:
+--  The CC-UNIX shell provides a reasonably full-featured API through the global table
+-- sh. Of the provided methods, perhaps the most important are:
+--    sh.parse(...)			Parse command arguments into flags and args.
+--    sh.getPwd()			Return the current working directory.
+--    sh.setPwd(path:string)		Set the current working directory.
+--    sh.resolvePath(path:string)	Resolve a path relative to the PWD.
+--    sh.run(command:string, ...)	Run a command or file.
+
+sh = {}
+
+local tokenize = require("tokenize")
+local table = require("table")
+
+local exit = false
+
+-- A builtin
+local builtins = table.new({
+  ["exit"] = function()
+    exit = true
+  end
+})
+
+local vars = table.new({
+  ["$HOME"] = users.homeDir(),
+  ["$HOSTNAME"] = net.hostname() or "localhost",
+  ["$USER"] = users.user(),
+  ["$UID"] = users.uid(),
+  ["$PATH"] = "/bin:/usr/bin",
+  ["$PWD"] = users.homeDir(),
+  ["$PS1"] = "[\u@\h \W]\$ "
+})
+
+local function prompt(ps) -- A monster of a function, but it works --
+  local rtn = ""
+  for c in ps:gmatch(".") do
+    if c == "\u" then
+      rtn = rtn .. vars["$USER"]
+    elseif c == "\h" then
+      rtn = rtn .. vars["$HOSTNAME"]
+    elseif c == "\w" then
+      if vars["$PWD"]:sub(1,#vars["$HOME"]) == vars["$HOME"] then
+        rtn = rtn .. vars["$HOME"] .. "/" .. vars["$PWD"]:sub(#vars["$HOME"]+1)
+      else
+        rtn = rtn .. vars["$PWD"]
+      end
+    elseif c == "\W" then
+      local tmp = vars["$PWD"]
+      if vars["$PWD"] == vars["$HOME"] then
+        rtn = rtn .. "~"
+      else
+        local tmp2 = ""
+        for i=#tmp, 1, -1 do
+          if tmp:sub(i,i) == "/" then
+            break
+          else
+            tmp2 = tmp:sub(i,i) .. tmp2
+          end
+        end
+        rtn = rtn .. tmp2
+      end
+    else
+      rtn = rtn .. c
+    end
+  end
+  return rtn
+end
+
+function sh.getPwd()
+  return vars["$PWD"]
+end
+
+function sh.resolvePath(path)
+  local pwd = sh.getPwd()
+  local head = path:sub(1,1)
+  if head == "/" then
+    return path
+  elseif head == "~" or path:sub(1,5) == "$HOME" then
+    return vars["$HOME"] .. path:sub(#vars["$HOME"]+1)
+  elseif path:sub(2,2) == ".." then
+    return fs.getName(pwd)
+  else
+    return pwd .. "/" .. path
+  end
+end
+
+function sh.setPwd(dir)
+  local dir = sh.resolvePath(dir)
+  if fs.exists(dir) then
+    vars["$PWD"] = dir
+  end
+  return true
+end
+
+function sh.path()
+  return vars["$PATH"]
+end
+
+function sh.parse(...) -- Parse arguments
+  local src = {...}
+  local flags, args = table.new(), table.new()
+  for i=1, #src, 1 do
+    local arg = src[i]
+    if arg:sub(1,1) == "-" then
+      arg = arg:sub(2)
+      for c in arg:gmatch(".") do
+        flags[c] = {arg = true}
+      end
+    else
+      if vars[arg] then
+        arg = vars[arg]
+      end
+      args:insert(arg)
+    end
+  end
+  return flags, args
+end
+
+-- More builtins!
+builtins["cd"] = function(...)
+  local _, args = sh.parse(...)
+
+  local cdTo = vars["$HOME"]
+  if #args >= 1 then
+    cdTo = sh.resolvePath(args[1])
+  end
+  if fs.exists(cdTo) then
+    sh.setPwd(cdTo)
+  else
+    error("sh: cd: " .. cdTo .. ": No such file or directory")
+  end
+end
+
+function sh.set(...)
+  local _, args = sh.parse(...)
+  if #args < 2 then
+    error("sh: set: usage: set <$VARIABLE> <VALUE>")
+    return
+  else
+    local destVar = args[1]
+    if destVar:sub(1,1) ~= "$" then
+      destVar = "$" .. destVar
+    end
+    print(destVar, args[2])
+    if vars[args[2]] then
+      vars[destVar] = vars[args[2]]
+    else
+      vars[destVar] = args[2]
+    end
+  end
+end
+
+function sh.get(...)
+  local _, args = sh.parse(...)
+  if #args < 1 then
+    error("sh: get: usage: get <$VARIABLE>")
+    return false
+  end
+  if vars[args[1]] then
+    return vars[args[1]]
+  else
+    error("sh: get: Invalid variable")
+    return false
+  end
+end
+
+builtins["set"] = function(...)
+  sh.set(...)
+end
+
+builtins["get"] = function(...)
+  local rtn = sh.get(...)
+  if rtn then
+    print(rtn)
+  else
+    return rtn
+  end
+end
+
+function sh.run(cmd, ...)
+  local cmd = cmd
+  if cmd:sub(1,1) ~= "/" then
+    local path = tokenize(sh.path(), ":")
+    for i=1, #path, 1 do
+      if fs.exists(path[i] .. "/" .. cmd) then
+        cmd = path[i] .. "/" .. cmd
+        break
+      end
+    end
+  end
+  if fs.exists(cmd) then
+    local ok, err = loadfile(cmd)
+    if not ok then
+      error(err)
+      return false
+    end
+    ok(...)
+  elseif builtins[cmd] then
+    builtins[cmd](...)
+  else
+    printError("sh: " .. cmd .. ": Command not found")
+    return false
+  end
+end
+
+builtins["source"] = function(...)
+  local _, args = sh.parse(...)
+  if #args < 1 then
+    error("sh: source: filename required")
+    return false
+  end
+end
+
+while not exit do
+  write(prompt(vars["$PS1"]))
+  local cmd = read()
+  cmd = tokenize(cmd)
+  local args = table.new()
+  if cmd then
+    if #cmd > 1 then
+      for i=2, #cmd, 1 do
+        args:insert(cmd[i])
+      end
+    end
+    cmd = cmd[1]
+    local s, e = pcall(function()
+      sh.run(cmd, table.unpack(args))
+    end)
+    if (not s) and e then
+      error(e)
+    end
+  end
+end

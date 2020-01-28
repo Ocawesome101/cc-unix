@@ -1,0 +1,89 @@
+-- ls --
+
+local flags, args = sh.parse(...)
+
+local table = require("table")
+
+local listDir = sh.getPwd()
+local showAll = false
+local showSize = false
+local humanReadableSize = false
+
+local fileColor = colors.white
+local dirColor = colors.white
+
+if flags["c"] then
+  fileColor = colors.white
+  dirColor = colors.lightBlue
+end
+if flags["a"] then
+  showAll = true
+end
+if flags["l"] then
+  showSize = true
+end
+if flags["h"] then
+  humanReadableSize = true
+end
+
+if args[1] then
+  listDir = sh.resolvePath(args[1])
+end
+
+local contents = fs.list(listDir)
+
+local files = table.new()
+local dirs = table.new()
+
+-- Not one, not two, but THREE for-loops in a row! --
+for i=1, #contents, 1 do
+  if fs.isDir(listDir .. "/" .. contents[i]) then
+    dirs:insert(contents[i])
+  else
+    files:insert(contents[i])
+  end
+end
+
+local function printFile(file)
+  local head = file:sub(1,1)
+  local size = ""
+  local perms = ""
+  local isDir = fs.isDir(listDir .. "/" .. file)
+  if showSize then
+    size = fs.getSize(listDir .. "/" .. file)
+    perms = fs.permissions(listDir)
+    local c
+    if isDir then
+      size = 4096
+      c = "d"
+    else
+      c = "-"
+    end
+    perms = c .. perms.rwx
+  end
+  if humanReadableSize then
+    if size >= 1024 then
+      size = tostring(size/1024):sub(1,4) .. "K"
+    end
+  end
+  if head ~= "." or showAll then
+    if showSize then
+      write( table.concat( {perms, tostring(size)}, " " ) .. " " )
+    end
+    if isDir then
+      term.setTextColor(dirColor)
+    else
+      term.setTextColor(fileColor)
+    end
+    print(file)
+    term.setTextColor(colors.white)
+  end
+end
+
+for i=1, #files, 1 do
+  printFile(files[i])
+end
+
+for i=1, #dirs, 1 do
+  printFile(dirs[i])
+end

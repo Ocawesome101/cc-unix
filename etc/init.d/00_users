@@ -1,0 +1,2 @@
+log("Setting up user system\n")
+_G.users = require("/lib/core/users")

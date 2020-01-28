@@ -9,19 +9,19 @@ for k,v in pairs(fs) do
   _fs[k] = v
 end
 
-local read = require("lua/read")
-
 local users = {}
 
 local function getCreds()
-  local h = _fs.open("/etc/passwd", "r")
+  --[[local h = _fs.open("/etc/passwd", "r")
   if h then
     local creds = h.readAll()
   else
-    return {["user"] = "password"}
+    return {["user"] = {password="password",uid=1}}
   end
   h.close()
-  return loadstring("return " .. creds, "@users.getCreds", "bt", _G)
+  print(creds)]]
+  return loadfile("/etc/passwd")()
+--  return loadstring(creds, "@users.getCreds", "bt", _G)
 end
 
 local function authenticate(uname, pwd)
@@ -43,11 +43,7 @@ function users.uid()
   return userid
 end
 
-function users.login()
-  write((net.hostname() or "localhost") .. " login: ")
-  local uname = read()
-  write("password: ")
-  local pwd = read("*")
+function users.login(uname, pwd)
   local ok, uid = authenticate(uname, pwd)
   if ok then
     username = uname
@@ -55,6 +51,14 @@ function users.login()
     return true
   end
   return false
+end
+
+function users.homeDir()
+  if username == "root" and userid == 0 then
+    return "/root"
+  else
+    return "/home/" .. username
+  end
 end
 
 function users.logout()
